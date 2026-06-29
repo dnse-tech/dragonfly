@@ -1,5 +1,13 @@
 # syntax=docker/dockerfile:1
-FROM ghcr.io/romange/ubuntu-dev:20-gcc14 AS builder
+# Both base images are global build args (declared before any FROM):
+#  - BUILDER_IMAGE: the builder stage only unpacks a prebuilt release binary, so
+#    architectures without a romange/ubuntu-dev image (e.g. s390x) fall back to a
+#    plain multi-arch base such as ubuntu:22.04.
+#  - RUNTIME_IMAGE: the s390x binary is built natively on Ubuntu 24.04 (glibc 2.39),
+#    so its image uses a matching 24.04 base while amd64/arm64 keep the 22.04 base.
+ARG BUILDER_IMAGE=ghcr.io/romange/ubuntu-dev:20-gcc14
+ARG RUNTIME_IMAGE=ubuntu:22.04
+FROM ${BUILDER_IMAGE} AS builder
 
 ARG TARGETPLATFORM
 
@@ -9,8 +17,8 @@ COPY releases/dragonfly-* /tmp/
 
 RUN /tmp/fetch_release.sh ${TARGETPLATFORM}
 
-# Now prod image
-FROM ubuntu:22.04
+# Now prod image (runtime base selected via the global RUNTIME_IMAGE arg above).
+FROM ${RUNTIME_IMAGE}
 
 # ARG in fact change the env vars during the build process
 # ENV persist the env vars for the built image as well.

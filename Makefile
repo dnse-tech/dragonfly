@@ -6,7 +6,14 @@ HELIO_OPENSSL_USE_STATIC_LIBS = ON
 HELIO_ENABLE_GIT_VERSION = ON
 HELIO_WITH_UNWIND ?= OFF
 RELEASE_DIR=build-release
+
+# SimSIMD ships only x86_64/aarch64 SIMD kernels; it has no s390x (big-endian)
+# code path, so disable it there. Can still be overridden from the environment.
+ifeq ($(BUILD_ARCH),s390x)
+WITH_SIMSIMD ?= OFF
+else
 WITH_SIMSIMD ?= ON
+endif
 
 # Release build use glog. Everything else (local dev, CI tests) use absl logging through the root CMakeLists.txt cache
 # default.

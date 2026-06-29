@@ -1,0 +1,50 @@
+flit: make the codec endian-safe so it works on big-endian s390x
+
+The flit varint codec already serializes through base::LE (little-endian) load/store
+helpers, but EncodeT() and Parse64Safe() bypassed them with host-order memcpy on the
+raw integer, which produced wrong bytes on big-endian hosts. Route those two paths
+through a little-endian staging buffer (byte-identical on little-endian hosts) and drop
+the big-endian static_assert.
+
+Apply from the helio submodule root:  git -C helio apply ../patches/helio-flit-s390x-big-endian.patch
+--- a/base/flit.h
++++ b/base/flit.h
+@@ -42,7 +42,8 @@ Encoding *should* pick the smallest range capable to hold the value.
+
+ */
+
+-static_assert(LE::IsLittleEndian(), "Current flit implentation does not suppport big endian");
++// flit serializes via base::LE (little-endian) load/store helpers, so the wire
++// format is little-endian on every host, including big-endian s390x.
+
+ namespace detail {
+
+@@ -171,10 +172,12 @@ inline unsigned Parse64Safe(const uint8_t* begin, const uint8_t* end, uint64_t*
+   if (sz < index)
+     return 0;
+
+-  detail::dispatch_impl<8>::visit(index, [&](unsigned len) { memcpy(v, begin, len); });
++  uint8_t le_buf[8] = {0};
++  detail::dispatch_impl<8>::visit(index, [&](unsigned len) { memcpy(le_buf, begin, len); });
+
+-  *v &= ((1ULL << index * 8) - 1);
+-  *v >>= index;
++  uint64_t val = LE::LoadT<uint64_t>(le_buf);
++  val &= ((1ULL << index * 8) - 1);
++  *v = val >> index;
+
+   return index;
+ }
+@@ -203,7 +206,11 @@ template <typename T> unsigned EncodeT(T v, uint8_t* dest) {
+
+   // Compares num_bytes to constants and calls memcpy with a constant.
+   // Subsequently, provides an effient code.
+-  detail::dispatch_impl<sizeof(T)>::visit(enc_len, [&](unsigned len) { memcpy(dest, &v, len); });
++  // Serialize through a little-endian buffer so the low enc_len bytes are emitted
++  // in wire order regardless of host endianness.
++  uint8_t le_buf[sizeof(T)];
++  LE::StoreT(v, le_buf);
++  detail::dispatch_impl<sizeof(T)>::visit(enc_len, [&](unsigned len) { memcpy(dest, le_buf, len); });
+
+   return enc_len;
+ }

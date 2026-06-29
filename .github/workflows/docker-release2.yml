@@ -33,8 +33,19 @@ jobs:
         os:
           - image: ubuntu-24.04
             arch: amd64
+            builder_image: ghcr.io/romange/ubuntu-dev:20-gcc14
+            runtime_image: ubuntu:22.04
           - image: ubuntu-24.04-arm
             arch: arm64
+            builder_image: ghcr.io/romange/ubuntu-dev:20-gcc14
+            runtime_image: ubuntu:22.04
+          # s390x has no romange/ubuntu-dev image; the builder stage only unpacks the
+          # release binary, so a plain multi-arch base is enough. The binary is built
+          # natively on Ubuntu 24.04, so the runtime base matches (glibc 2.39).
+          - image: [self-hosted, s390x]
+            arch: s390x
+            builder_image: ubuntu:24.04
+            runtime_image: ubuntu:24.04
 
     runs-on: ${{ matrix.os.image }}
     permissions:
@@ -107,8 +118,11 @@ jobs:
             ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
           file: tools/packaging/Dockerfile.${{ matrix.flavor }}-prod
-          cache-from: type=gha,scope=prod-${{ matrix.flavor }}
-          cache-to: type=gha,scope=prod-${{ matrix.flavor }},mode=max
+          build-args: |
+            BUILDER_IMAGE=${{ matrix.os.builder_image }}
+            RUNTIME_IMAGE=${{ matrix.os.runtime_image }}
+          cache-from: type=gha,scope=prod-${{ matrix.flavor }}-${{ matrix.os.arch }}
+          cache-to: type=gha,scope=prod-${{ matrix.flavor }}-${{ matrix.os.arch }},mode=max
           load: true  # Load the build images into the local docker.
 
       - name: Test Image
@@ -124,6 +138,7 @@ jobs:
     outputs:
       sha_amd: ${{ steps.output-sha.outputs.sha_amd64 }}
       sha_arm: ${{ steps.output-sha.outputs.sha_arm64 }}
+      sha_s390x: ${{ steps.output-sha.outputs.sha_s390x }}
 
   merge_manifest:
     needs: [build_and_tag]
@@ -151,6 +166,7 @@ jobs:
               local flavor=$4
               local tag_name=$5
               local is_prerelease=$6
+              local sha_s390x=$7
 
               # Function for semantic version comparison
               # Returns true if current_version >= latest_version
@@ -186,7 +202,7 @@ jobs:
               if [[ "$is_prerelease" == 'true' ]]; then
                 # Create and push the manifest like dragonfly:alpha-ubuntu
                 tag="${registry}:alpha-${flavor}"
-                docker manifest create ${tag} --amend ${sha_amd} --amend ${sha_arm}
+                docker manifest create ${tag} --amend ${sha_amd} --amend ${sha_arm} --amend ${sha_s390x}
                 docker manifest push ${tag}
               elif [[ "$flavor" == 'ubuntu' ]]; then
                 # Checking if this version should be tagged as latest
@@ -245,7 +261,7 @@ jobs:
                   echo "Version ${tag_name} is newer than or equal to current latest, updating latest tag"
                   tag="${registry}:latest"
                   # Create and push the manifest like dragonfly:latest
-                  docker manifest create ${tag} --amend ${sha_amd} --amend ${sha_arm}
+                  docker manifest create ${tag} --amend ${sha_amd} --amend ${sha_arm} --amend ${sha_s390x}
                   docker manifest push ${tag}
                 else
                   echo "Version ${tag_name} is older than current latest (${latest_version}), NOT updating latest tag"
@@ -254,19 +270,21 @@ jobs:
 
               # Create and push the manifest like dragonfly:v1.26.4
               tag="${registry}:${tag_name}"
-              docker manifest create ${tag} --amend ${sha_amd} --amend ${sha_arm}
+              docker manifest create ${tag} --amend ${sha_amd} --amend ${sha_arm} --amend ${sha_s390x}
               docker manifest push ${tag}
             }
 
             # GitHub Container Registry manifests
             ghcr_sha_amd=${{ env.IMAGE }}@${{ needs.build_and_tag.outputs.sha_amd }}
             ghcr_sha_arm=${{ env.IMAGE }}@${{ needs.build_and_tag.outputs.sha_arm }}
-            create_and_push_manifests "${{ env.IMAGE }}" "$ghcr_sha_amd" "$ghcr_sha_arm" "${{ matrix.flavor }}" "${{ env.TAG_NAME }}" "${{ env.IS_PRERELEASE }}"
+            ghcr_sha_s390x=${{ env.IMAGE }}@${{ needs.build_and_tag.outputs.sha_s390x }}
+            create_and_push_manifests "${{ env.IMAGE }}" "$ghcr_sha_amd" "$ghcr_sha_arm" "${{ matrix.flavor }}" "${{ env.TAG_NAME }}" "${{ env.IS_PRERELEASE }}" "$ghcr_sha_s390x"
 
             # Google Artifact Registry manifests
             gar_sha_amd=${{ env.GCS_IMAGE }}@${{ needs.build_and_tag.outputs.sha_amd }}
             gar_sha_arm=${{ env.GCS_IMAGE }}@${{ needs.build_and_tag.outputs.sha_arm }}
-            create_and_push_manifests "${{ env.GCS_IMAGE }}" "$gar_sha_amd" "$gar_sha_arm" "${{ matrix.flavor }}" "${{ env.TAG_NAME }}" "${{ env.IS_PRERELEASE }}"
+            gar_sha_s390x=${{ env.GCS_IMAGE }}@${{ needs.build_and_tag.outputs.sha_s390x }}
+            create_and_push_manifests "${{ env.GCS_IMAGE }}" "$gar_sha_amd" "$gar_sha_arm" "${{ matrix.flavor }}" "${{ env.TAG_NAME }}" "${{ env.IS_PRERELEASE }}" "$gar_sha_s390x"
 
   release_helm_and_notify:
     needs: [merge_manifest]

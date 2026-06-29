@@ -6,7 +6,7 @@ Section: database
 Vcs-Git: https://github.com/dragonflydb/dragonfly
 
 Package: dragonfly
-Architecture: amd64 arm64
+Architecture: amd64 arm64 s390x
 Depends: libc6, openssl, adduser, zstd
 Homepage: https://dragonflydb.io
 Description: A fast in-memory store that is fully compatible with Redis™* and Memcached.

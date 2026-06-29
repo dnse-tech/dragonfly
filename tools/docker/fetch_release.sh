@@ -8,11 +8,11 @@ PSHORT=${PLATFORM#"linux/"}
 echo "PSHORT ${PSHORT}"
 
 
-if [ "${PSHORT}" = "amd64" ]; then
-  SUFFIX='x86_64'
-else
-  SUFFIX='aarch64'
-fi
+case "${PSHORT}" in
+  amd64) SUFFIX='x86_64' ;;
+  s390x) SUFFIX='s390x' ;;
+  *)     SUFFIX='aarch64' ;;
+esac
 
 mv /tmp/dragonfly-${SUFFIX} /build/dragonfly
 ls -l /build/
