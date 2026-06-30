@@ -926,27 +926,13 @@ unsigned BucketBase<NUM_SLOTS>::UnsetStashPtr(uint8_t fp_hash, unsigned stash_po
 #ifdef __s390x__
 template <unsigned NUM_SLOTS> uint32_t BucketBase<NUM_SLOTS>::CompareFP(uint8_t fp) const {
   static_assert(FpArray{}.size() <= 16);
-  __vector unsigned char v1;
-
-  // Replicate 16 times fp to key_data.
-  for (int i = 0; i < 16; i++) {
-    v1[i] = fp;
+  // Scalar fingerprint match: bit i is set iff slot i's fingerprint equals fp.
+  // Endian-neutral and correct on big-endian s390x.
+  uint32_t mask = 0;
+  for (unsigned i = 0; i < finger_arr_.size(); ++i) {
+    if (finger_arr_[i] == fp)
+      mask |= (1u << i);
   }
-
-  // Loads 16 bytes of src into seg_data.
-  __vector unsigned char v2 = vec_load_len(finger_arr_.data(), 16);
-
-  // compare 1-byte vectors seg_data and key_data, dst[i] := ( a[i] == b[i] ) ? 0xFF : 0.
-  __vector __bool char rv_mask = vec_cmpeq(v1, v2);
-
-  // collapses 16 msb bits from each byte in rv_mask into mask.
-  int mask = 0;
-  for (int i = 0; i < 16; i++) {
-    if (rv_mask[i]) {
-      mask |= 1 << i;
-    }
-  }
-
   return mask;
 }
 #else

@@ -149,7 +149,10 @@ void ascii_pack(const char* ascii, size_t len, uint8_t* bin) {
       val >>= 1;
       dest |= (val & (0x7FUL << 7 * i));
     }
-    memcpy(bin, &dest, 7);
+    // Emit the low 7 bytes in little-endian (wire) order on every host.
+    uint8_t le[8];
+    absl::little_endian::Store64(le, dest);
+    memcpy(bin, le, 7);
     bin += 7;
     ascii += 8;
   }
@@ -167,7 +170,10 @@ void ascii_pack2(const char* ascii, size_t len, uint8_t* bin) {
   while (ascii + 8 <= end) {
     val = absl::little_endian::Load64(ascii);
     val = Compress8x7bit(val);
-    memcpy(bin, &val, 7);
+    // Emit the low 7 bytes in little-endian (wire) order on every host.
+    uint8_t le[8];
+    absl::little_endian::Store64(le, val);
+    memcpy(bin, le, 7);
     bin += 7;
     ascii += 8;
   }
